@@ -11,7 +11,7 @@ local AllySpawnPos = nil
 PrintChat(myHero:GetSpellData(_R).level)
 do
     
-    local Version = 1.0
+    local Version = 1.1
     
     local Files = {
         Lua = {
@@ -491,6 +491,7 @@ function Kaisa:Tick()
 	self:Auto()
 	self:LastHit()
 	self:LaneClear()
+self:Healing()
     if EnemyLoaded == false then
         local CountEnemy = 0
         for i, enemy in pairs(EnemyHeroes) do
@@ -592,7 +593,7 @@ function Kaisa:Logic()
 	end
 	local QRange = 600 + myHero.boundingRadius + target.boundingRadius
 	local WRange = 1400 + myHero.boundingRadius + target.boundingRadius
-	local ERange = AARange + 300 + myHero.boundingRadius + target.boundingRadius
+	local ERange = 525 + 300 + myHero.boundingRadius + target.boundingRadius
 	
 	
 	if Mode() == "Combo" and target then
