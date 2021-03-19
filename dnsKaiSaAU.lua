@@ -11,7 +11,7 @@ local AllySpawnPos = nil
 PrintChat(myHero:GetSpellData(_R).level)
 do
     
-    local Version = 1.1
+    local Version = 1.2
     
     local Files = {
         Lua = {
@@ -491,7 +491,6 @@ function Kaisa:Tick()
 	self:Auto()
 	self:LastHit()
 	self:LaneClear()
-self:Healing()
     if EnemyLoaded == false then
         local CountEnemy = 0
         for i, enemy in pairs(EnemyHeroes) do
