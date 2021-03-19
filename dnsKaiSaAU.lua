@@ -440,6 +440,10 @@ function Kaisa:Menu()
 	self.Menu.Draws:MenuElement({id = "QDraw", name = "Q Range", value = false})
 	self.Menu.Draws:MenuElement({id = "WDraw", name = "W Range", value = false})
 	self.Menu.Draws:MenuElement({id = "RDraw", name = "R Range", value = false})
+--misc
+	self.Menu:MenuElement({id = "Misc", name = "Items/Summs", type = MENU})
+	self.Menu.Misc:MenuElement({id = "Pots", name = "Auto Use Potions/Refill/Cookies", value = true})
+	self.Menu.Misc:MenuElement({id = "HeaBar", name = "Auto Use Heal / Barrier", value = true})
 end
 
 function Kaisa:Draws()
@@ -567,6 +571,18 @@ function Kaisa:Auto()
 				Control.CastSpell(HK_E)
 			end
 		end
+		if self.Menu.Misc.HeaBar:Value() and myHero.health / myHero.maxHealth <= 0.3 and enemy.activeSpell.target == myHero.handle then
+			if myHero:GetSpellData(SUMMONER_1).name == "SummonerHeal" then
+				Control.CastSpell(HK_SUMMONER_2)
+			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerHeal" then
+				Control.CastSpell(HK_SUMMONER_1)
+			end
+			if myHero:GetSpellData(SUMMONER_1).name == "SummonerBarrier" then
+				Control.CastSpell(HK_SUMMONER_2)
+			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerBarrier" then
+				Control.CastSpell(HK_SUMMONER_1)
+			end
+		end
 	end
 end
 
@@ -657,7 +673,24 @@ function Kaisa:LaneClear()
 	MinionsAround = count
 end
 	
+function Kaisa:Healing()
+	if myHero.alive == false then return end 
 	
+	local ItemPot = GetInventorySlotItem(2003)
+	local ItemRefill = GetInventorySlotItem(2031)
+	local ItemCookie = GetInventorySlotItem(2010)
+	--PrintChat(ItemRefill)
+	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "Item2003") and self.Menu.Misc.Pots:Value() and ItemPot ~= nil then
+		Control.CastSpell(ItemHotKey[ItemPot])
+	end
+	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "ItemCrystalFlask") and self.Menu.Misc.Pots:Value() and myHero:GetItemData(ItemRefill).ammo > 0 and ItemRefill ~= nil then
+		Control.CastSpell(ItemHotKey[ItemRefill])
+	end
+	if (myHero.health / myHero.maxHealth <= 0.3 or myHero.mana / myHero.maxMana <= 0.2) and not BuffActive(myHero, "Item2010") and self.Menu.Misc.Pots:Value() and ItemCookie ~= nil then
+		Control.CastSpell(ItemHotKey[ItemCookie])
+	end
+	
+end
 	
 function Kaisa:OnPostAttack(args)
 end
@@ -672,3 +705,4 @@ end
 function OnLoad()
     Manager()
 end
+
