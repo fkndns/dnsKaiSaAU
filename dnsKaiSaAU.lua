@@ -2,16 +2,16 @@ require "PremiumPrediction"
 require "DamageLib"
 require "2DGeometry"
 require "MapPositionGOS"
+require "GGPrediction"
 
 local EnemyHeroes = {}
 local AllyHeroes = {}
 local EnemySpawnPos = nil
 local AllySpawnPos = nil
 -- [ AutoUpdate ] --
-PrintChat(myHero:GetSpellData(_R).level)
 do
     
-    local Version = 1.2
+    local Version = 1.3
     
     local Files = {
         Lua = {
@@ -55,6 +55,9 @@ do
     AutoUpdate()
 
 end
+
+local ItemHotKey = {[ITEM_1] = HK_ITEM_1, [ITEM_2] = HK_ITEM_2,[ITEM_3] = HK_ITEM_3, [ITEM_4] = HK_ITEM_4, [ITEM_5] = HK_ITEM_5, [ITEM_6] = HK_ITEM_6,}
+
 
 local function IsNearEnemyTurret(pos, distance)
     --PrintChat("Checking Turrets")
@@ -389,10 +392,12 @@ function Manager:LoadKaisa()
 end
 
 class "Kaisa"
-
+local AARange = 525 + myHero.boundingRadius 
 local EnemyLoaded = false
 local MinionsAround = count
-
+local DodgeableRange = 400
+local GaleTargetRange = AARange + DodgeableRange + 50
+local QMouseSpot = nil
 function Kaisa:Menu()
 -- menu
 	self.Menu = MenuElement({type = MENU, id = "Kaisa", name = "dnsKai'Sa"})
@@ -407,9 +412,6 @@ function Kaisa:Menu()
 	self.Menu.QSpell:MenuElement({id = "QLaneClearCount", name = "LaneClear if Minions >", value = 2, min = 0, max = 7, step = 1})
 	self.Menu.QSpell:MenuElement({id = "QLaneClearMana", name = "LaneClear Mana %", value = 50, min = 0, max = 100, identifier = "%"})
 	self.Menu.QSpell:MenuElement({id = "QSpace3", name = "", type = SPACE})
-	self.Menu.QSpell:MenuElement({id = "QLastHit", name = "LastHit", value = false})
-	self.Menu.QSpell:MenuElement({id = "QLastHitMana", name = "LastHit Mana %", value = 50, min = 0, max = 100, identifier = "%"})
-	self.Menu.QSpell:MenuElement({id = "QSpace4", name = "", type = SPACE})
 -- w spell
 	self.Menu:MenuElement({id = "WSpell", name = "W", type = MENU})
 	self.Menu.WSpell:MenuElement({id = "WCombo", name = "Combo", value = true})
@@ -441,11 +443,30 @@ function Kaisa:Menu()
 	self.Menu.Draws:MenuElement({id = "WDraw", name = "W Range", value = false})
 	self.Menu.Draws:MenuElement({id = "RDraw", name = "R Range", value = false})
 --misc
-	self.Menu:MenuElement({id = "Misc", name = "Items/Summs", type = MENU})
+	self.Menu:MenuElement({id = "Misc", name = "Activator", type = MENU})
 	self.Menu.Misc:MenuElement({id = "Pots", name = "Auto Use Potions/Refill/Cookies", value = true})
 	self.Menu.Misc:MenuElement({id = "HeaBar", name = "Auto Use Heal / Barrier", value = true})
+	self.Menu.Misc:MenuElement({id = "Cleanse", name = "Auto Use Cleans", value = true})
+	self.Menu.Misc:MenuElement({id = "QSS", name = "Auto Use QSS", value = true})
+--GaleForce / Flash Evade
+	self.Menu:MenuElement({id = "Evade", name = "Evade", type = MENU})
+	self.Menu.Evade:MenuElement({id = "EvadeGaFo", name = "Use Galeforce to Dodge", value = true})
+	self.Menu.Evade:MenuElement({id = "EvadeFla", name = "Use Flash to Dodge", value = true})
+	self.Menu.Evade:MenuElement({id = "EvadeCalc", name = "Sometimes Dodge Away from Mouse", value = true})
+	self.Menu.Evade:MenuElement({id = "EvadeSpells", name = "Enemy Spells to Dodge", type = MENU})
+-- RangedHelper
+	self.Menu:MenuElement({id = "RangedHelperWalk", name = "Enable KiteAssistance", value = true})
 end
 
+function Kaisa:MenuEvade()
+	for i, enemy in pairs(EnemyHeroes) do
+		self.Menu.Evade.EvadeSpells:MenuElement({id = enemy.charName, name = enemy.charName, type = MENU})
+        self.Menu.Evade.EvadeSpells[enemy.charName]:MenuElement({id = enemy:GetSpellData(_Q).name, name = enemy:GetSpellData(_Q).name, value = false})
+        self.Menu.Evade.EvadeSpells[enemy.charName]:MenuElement({id = enemy:GetSpellData(_W).name, name = enemy:GetSpellData(_W).name, value = false})
+        self.Menu.Evade.EvadeSpells[enemy.charName]:MenuElement({id = enemy:GetSpellData(_E).name, name = enemy:GetSpellData(_E).name, value = false})
+        self.Menu.Evade.EvadeSpells[enemy.charName]:MenuElement({id = enemy:GetSpellData(_R).name, name = enemy:GetSpellData(_R).name, value = false})
+	end
+end
 function Kaisa:Draws()
 	if self.Menu.Draws.EnableDraws:Value() then
         if self.Menu.Draws.QDraw:Value() then
@@ -467,22 +488,41 @@ function Kaisa:Draws()
 end
 
 function Kaisa:CastingChecks()
-	if CastingQ or CastingW or CastingE or CastingR then
+	if CastingQ or CastingW or CastingR then
 		return false
 	else
 		return true
 	end
 end
 
+function Kaisa:CastingChecksE()
+	if CastingQ or CastingW or CastingE or CastingR then
+		return false
+	else 
+		return true
+	end
+end
 
 function Kaisa:Spells()
-	WSpellData = {speed = 1750, range = 3000, delay = 0.40, radius = 100, collision = {"minion"}, type = "linear"}
+	local Latency = Game.Latency()
+	WPrediction = GGPrediction:SpellPrediction({Type = GGPrediction.SPELLTYPE_LINE, Delay = 0.4+Latency, Radius = 100, Range = 1400, Speed = 1750, Collision = true, CollisionTypes = {GGPrediction.COLLISION_MINION}})
+	WSpellData = {speed = 1750, range = 1400, delay = 0.4+Latency, radius = 100, collision = {"minion"}, type = "linear"}
 end
 
 function Kaisa:Tick()
     if _G.JustEvade and _G.JustEvade:Evading() or (_G.ExtLibEvade and _G.ExtLibEvade.Evading) or Game.IsChatOpen() or myHero.dead then return end
     target = GetTarget(1400)
     AARange = _G.SDK.Data:GetAutoAttackRange(myHero)
+	if target then
+        EAARange = _G.SDK.Data:GetAutoAttackRange(target)
+    end
+    if target and ValidTarget(target) then
+        --PrintChat(target.pos:To2D())
+        --PrintChat(mousePos:To2D())
+        GaleMouseSpot = self:RangedHelper(target)
+    else
+        _G.SDK.Orbwalker.ForceMovement = nil
+    end
 	CastingQ = myHero.activeSpell.name == "KaisaQ"
 	CastingW = myHero.activeSpell.name == "KaisaW"
 	CastingE = myHero.activeSpell.name == "KaisaE"
@@ -491,6 +531,7 @@ function Kaisa:Tick()
 	self:Auto()
 	self:LastHit()
 	self:LaneClear()
+	self:Healing()
     if EnemyLoaded == false then
         local CountEnemy = 0
         for i, enemy in pairs(EnemyHeroes) do
@@ -499,6 +540,7 @@ function Kaisa:Tick()
         if CountEnemy < 1 then
             GetEnemyHeroes()
         else
+			self:MenuEvade()
             EnemyLoaded = true
             PrintChat("Enemy Loaded")
         end
@@ -518,9 +560,6 @@ function Kaisa:CanUse(spell, mode)
 			return true
 		end
 		if mode == "LaneClear" and IsReady(spell) and self.Menu.QSpell.QLaneClear:Value() and ManaPercent > self.Menu.QSpell.QLaneClearMana:Value() then
-			return true
-		end
-		if mode == "LastHit" and IsReady(spell) and self.Menu.QSpell.QLastHit:Value() and ManaPercent > self.Menu.QSpell.QLastHitMana:Value() then
 			return true
 		end
 	elseif spell == _W then
@@ -554,35 +593,70 @@ end
 function Kaisa:Auto()
 	for i, enemy in pairs(EnemyHeroes) do
 	-- w ks
-	--PrintChat("looking for ks")
 		local WRange = 1400 + myHero.boundingRadius + enemy.boundingRadius 
 		if enemy and not enemy.dead and ValidTarget(enemy, WRange) and self:CanUse(_W, "KS") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
 			local WDamage = GetWDmg(enemy)
-			--PrintChat(WDamage)
-			local pred = _G.PremiumPrediction:GetPrediction(myHero, enemy, WSpellData)
-			if pred.CastPos and _G.PremiumPrediction.HitChance.High(pred.HitChance) and GetDistance(pred.CastPos) < WRange and enemy.health < WDamage then
-				Control.CastSpell(HK_W, pred.CastPos)
-				--PrintChat("pew")
+			WPrediction:GetPrediction(enemy, myHero)
+			if WPrediction:CanHit(HITCHANCE_HIGH) and GetDistance(WPrediction.CastPosition) < WRange and enemy.health < WDamage then
+				Control.CastSpell(HK_W, WPrediction.CastPosition)
 			end
 		end
 		local Bedrohungsreichweite = 250 + myHero.boundingRadius + enemy.boundingRadius
-		if enemy and not enemy.dead and ValidTarget(enemy, Bedrohungsreichweite) and self:CanUse(_E, "ChargePeel") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
+		if enemy and not enemy.dead and ValidTarget(enemy, Bedrohungsreichweite) and self:CanUse(_E, "ChargePeel") and self:CastingChecksE() and not _G.SDK.Attack:IsActive() then
 			if GetDistance(enemy.pos) <= Bedrohungsreichweite and (enemy.ms * 1.0 > myHero.ms or enemy.pathing.isDashing) and IsFacing(enemy)then
 				Control.CastSpell(HK_E)
 			end
 		end
 		if self.Menu.Misc.HeaBar:Value() and myHero.health / myHero.maxHealth <= 0.3 and enemy.activeSpell.target == myHero.handle then
-			if myHero:GetSpellData(SUMMONER_1).name == "SummonerHeal" then
-				Control.CastSpell(HK_SUMMONER_2)
-			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerHeal" then
+			if myHero:GetSpellData(SUMMONER_1).name == "SummonerHeal" and IsReady(SUMMONER_1)then
 				Control.CastSpell(HK_SUMMONER_1)
+			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerHeal" and IsReady(SUMMONER_2)then
+				Control.CastSpell(HK_SUMMONER_2)
 			end
-			if myHero:GetSpellData(SUMMONER_1).name == "SummonerBarrier" then
-				Control.CastSpell(HK_SUMMONER_2)
-			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerBarrier" then
+			if myHero:GetSpellData(SUMMONER_1).name == "SummonerBarrier" and IsReady(SUMMONER_1) then
 				Control.CastSpell(HK_SUMMONER_1)
+			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerBarrier" and IsReady(SUMMONER_2) then
+				Control.CastSpell(HK_SUMMONER_2)
 			end
 		end
+		if self.Menu.Misc.Cleanse:Value() and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
+			if myHero:GetSpellData(SUMMONER_1).name == "SummonerBoost" and IsReady(SUMMONER_1) then
+				DelayAction(function() Control.CastSpell(HK_SUMMONER_1) end, 0.04)
+			elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerBoost" and IsReady(SUMMONER_2) then
+				DelayAction(function() Control.CastSpell(HK_SUMMONER_2) end, 0.04)
+			end
+		end
+		if (myHero:GetSpellData(SUMMONER_1).name == "SummonerBoost" and IsReady(SUMMONER_1)) or (myHero:GetSpellData(SUMMONER_2).name == "SummonerBoost" and IsReady(SUMMONER_2)) then
+		
+		else
+			if self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 3140) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 3140)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3140)] end, 0.04)
+			elseif self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 3139) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 3139)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3139)] end, 0.04)
+			elseif self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 6035) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 6035)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 6035)] end, 0.04)
+			end
+		end
+        local EEAARange = _G.SDK.Data:GetAutoAttackRange(enemy)
+		local AARange = _G.SDK.Data:GetAutoAttackRange(myHero)
+            if self:CastingChecks() and not (myHero.pathing and myHero.pathing.isDashing) then  
+                local BestGaleDodgeSpot = nil
+				--PrintChat("Got Dodge Spot")
+                if enemy and ValidTarget(enemy, GaleTargetRange) and (GetDistance(GaleMouseSpot, enemy.pos) < AARange or GetDistance(enemy.pos, myHero.pos) < AARange+150) then
+                        BestGaleDodgeSpot = self:GaleDodge(enemy, GaleMouseSpot)	
+                else
+                        BestGaleDodgeSpot = self:GaleDodge(enemy)
+                end
+                if  BestGaleDodgeSpot ~= nil then
+					if GetItemSlot(myHero, 6671) > 0 and self.Menu.Evade.EvadeGaFo:Value() and myHero:GetSpellData(GetItemSlot(myHero, 6671)).currentCd == 0 then
+							Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 6671)], BestGaleDodgeSpot)
+                    elseif myHero:GetSpellData(SUMMONER_1).name == "SummonerFlash" and IsReady(SUMMONER_1) and self.Menu.Evade.EvadeFla:Value() then
+						Control.CastSpell(HK_SUMMONER_1, BestGaleDodgeSpot)
+					elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerFlash" and IsReady(SUMMONER_2) and self.Menu.Evade.EvadeFla:Value() then
+						Control.CastSpell(HK_SUMMONER_2, BestGaleDodgeSpot)
+					end	
+				end
+			end
 	end
 end
 
@@ -602,13 +676,13 @@ function Kaisa:Logic()
 			end
 		end
 		if target and not target.dead and ValidTarget(target, WRange) and self:CanUse(_W, "Combo") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
-			local pred = _G.PremiumPrediction:GetPrediction(myHero, target, WSpellData)
-			if pred.CastPos and _G.PremiumPrediction.HitChance.High(pred.HitChance) and GetDistance(target.pos) < WRange and GetBuffStacks(target, "kaisapassivemarker") >= 3 then 
-				Control.CastSpell(HK_W, pred.CastPos)
+			WPrediction:GetPrediction(target, myHero)
+			if WPrediction:CanHit(HITCHANCE_HIGH) and GetDistance(WPrediction.CastPosition) < WRange and GetBuffStacks(target, "kaisapassivemarker") >= 3 then 
+				Control.CastSpell(HK_W, WPrediction.CastPosition)
 			end
 		end
-		if target and not target.dead and ValidTarget(target, ERange) and self:CanUse(_E, "Combo") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
-			if GetDistance(target.pos) < ERange and GetDistance(target.pos) > AARange then
+		if target and not target.dead and ValidTarget(target, ERange) and self:CanUse(_E, "Combo") and self:CastingChecksE() and not _G.SDK.Attack:IsActive() then
+			if GetDistance(target.pos) < ERange and GetDistance(target.pos) > 525 + myHero.boundingRadius + target.boundingRadius and IsMyHeroFacing(target) then
 				Control.CastSpell(HK_E)
 			end
 		end
@@ -619,16 +693,17 @@ function Kaisa:Logic()
 				Control.CastSpell(HK_Q)
 			end
 		end
-		if target and not target.dead and ValidTarget(target, WRange) and self:CanUse(_W, "Harass") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
+		if target and not target.dead and ValidTarget(target, WRange) and self:CanUse(_W, "Harass") and self:CastingChecksE() and not _G.SDK.Attack:IsActive() then
 			local pred = _G.PremiumPrediction:GetPrediction(myHero, target, WSpellData)
-			if pred.CastPos and _G.PremiumPrediction.HitChance.High(pred.HitChance) and GetDistance(target.pos) < WRange and GetBuffStacks(target, "kaisapassivemarker") >= 3 then 
-				Control.CastSpell(HK_W, pred.CastPos)
+			WPrediction:GetPrediction(target, myHero)
+			if WPrediction:CanHit(HITCHANCE_HIGH) and GetDistance(WPrediction.CastPosition) < WRange and GetBuffStacks(target, "kaisapassivemarker") >= 3 then 
+				Control.CastSpell(HK_W, WPrediction.CastPosition)
 			end
 		end
 	end
 	if Mode() == "Flee" and target then
-		if target and not target.dead and ValidTarget(target, AARange) and self:CanUse(_E, "Flee") and self:CastingChecks() and not _G.SDK.Attack:IsActive() then
-			if GetDistance(target.pos) < AARange then
+		if target and not target.dead and ValidTarget(target, ERange) and self:CanUse(_E, "Flee") and self:CastingChecksE() and not _G.SDK.Attack:IsActive() then
+			if GetDistance(target.pos) < ERange and not IsMyHeroFacing(target) then
 				Control.CastSpell(HK_E)
 			end
 		end
@@ -645,8 +720,7 @@ function Kaisa:LastHit()
 				local WDamage = GetWDmg(minion)
 				if minion and not minion.dead and WDamage >= minion.health and self:CastingChecks() and not _G.SDK.Attack:IsActive() then 
 					local pred = _G.PremiumPrediction:GetPrediction(myHero, minion, WSpellData)
-					--PrintChat("Got Prediction")
-					if pred.CastPos and _G.PremiumPrediction.HitChance.Low(pred.HitChance) then
+					if pred and _G.PremiumPrediction.HitChance.Low then
 						Control.CastSpell(HK_W, pred.CastPos)
 					end
 				end
@@ -676,22 +750,187 @@ end
 function Kaisa:Healing()
 	if myHero.alive == false then return end 
 	
-	local ItemPot = GetInventorySlotItem(2003)
-	local ItemRefill = GetInventorySlotItem(2031)
-	local ItemCookie = GetInventorySlotItem(2010)
+	local ItemPot = GetItemSlot(myHero, 2003)
+	local ItemRefill = GetItemSlot(myHero, 2031)
+	local ItemCookie = GetItemSlot(myHero, 2010)
 	--PrintChat(ItemRefill)
-	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "Item2003") and self.Menu.Misc.Pots:Value() and ItemPot ~= nil then
+	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "Item2003") and self.Menu.Misc.Pots:Value() and ItemPot > 0 then
 		Control.CastSpell(ItemHotKey[ItemPot])
 	end
-	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "ItemCrystalFlask") and self.Menu.Misc.Pots:Value() and myHero:GetItemData(ItemRefill).ammo > 0 and ItemRefill ~= nil then
+	if myHero.health / myHero.maxHealth <= 0.7 and not BuffActive(myHero, "ItemCrystalFlask") and self.Menu.Misc.Pots:Value() and myHero:GetItemData(ItemRefill).ammo > 0 and ItemRefill > 0 then
 		Control.CastSpell(ItemHotKey[ItemRefill])
 	end
-	if (myHero.health / myHero.maxHealth <= 0.3 or myHero.mana / myHero.maxMana <= 0.2) and not BuffActive(myHero, "Item2010") and self.Menu.Misc.Pots:Value() and ItemCookie ~= nil then
+	if (myHero.health / myHero.maxHealth <= 0.3 or myHero.mana / myHero.maxMana <= 0.2) and not BuffActive(myHero, "Item2010") and self.Menu.Misc.Pots:Value() and ItemCookie > 0 then
 		Control.CastSpell(ItemHotKey[ItemCookie])
 	end
 	
 end
+
+function Kaisa:GaleDodge(enemy, HelperSpot) 
+if enemy.activeSpell and enemy.activeSpell.valid then
+        if enemy.activeSpell.target == myHero.handle then 
+
+        elseif enemy.activeSpell.isStopped then
+		
+		else
+            local SpellName = enemy.activeSpell.name
+            if (self.Menu.Evade.EvadeSpells[enemy.charName] and self.Menu.Evade.EvadeSpells[enemy.charName][SpellName] and self.Menu.Evade.EvadeSpells[enemy.charName][SpellName]:Value()) or myHero.health/myHero.maxHealth <= 0.15 then
+
+
+
+
+                local CastPos = enemy.activeSpell.startPos
+                local PlacementPos = enemy.activeSpell.placementPos
+                local width = 100
+				local CastTime = enemy.activeSpell.startTime
+				local TimeDif = Game.Timer() - CastTime
+                if enemy.activeSpell.width > 0 then
+                    width = enemy.activeSpell.width
+                end
+                local SpellType = "Linear"
+                if SpellType == "Linear" and PlacementPos and CastPos and TimeDif >= 0.08 then
+
+                    --PrintChat(CastPos)
+                    local VCastPos = Vector(CastPos.x, CastPos.y, CastPos.z)
+                    local VPlacementPos = Vector(PlacementPos.x, PlacementPos.y, PlacementPos.z)
+
+                    local CastDirection = Vector((VCastPos-VPlacementPos):Normalized())
+                    local PlacementPos2 = VCastPos - CastDirection * enemy.activeSpell.range
+
+                    local TargetPos = Vector(enemy.pos)
+                    local MouseDirection = Vector((myHero.pos-mousePos):Normalized())
+                    local ScanDistance = width*2 + myHero.boundingRadius
+                    local ScanSpot = myHero.pos - MouseDirection * ScanDistance
+                    local ClosestSpot = Vector(self:ClosestPointOnLineSegment(myHero.pos, PlacementPos2, CastPos))
+                    if HelperSpot then 
+                        local ClosestSpotHelper = Vector(self:ClosestPointOnLineSegment(HelperSpot, PlacementPos2, CastPos))
+                        if ClosestSpot and ClosestSpotHelper then
+                            local PlacementDistance = GetDistance(myHero.pos, ClosestSpot)
+                            local HelperDistance = GetDistance(HelperSpot, ClosestSpotHelper)
+                            if PlacementDistance < width*2 + myHero.boundingRadius then
+                                if HelperDistance > width*2 + myHero.boundingRadius then
+                                    return HelperSpot
+                                elseif self.Menu.Evade.EvadeCalc:Value() then
+                                    local DodgeRange = width*2 + myHero.boundingRadius
+                                    if DodgeRange < DodgeableRange then
+                                        local DodgeSpot = self:GetDodgeSpot(CastPos, ClosestSpot, DodgeRange)
+                                        if DodgeSpot ~= nil then
+                                           --PrintChat("Dodging to Calced Spot")
+                                            return DodgeSpot
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        if ClosestSpot then
+                            local PlacementDistance = GetDistance(myHero.pos, ClosestSpot)
+                            if PlacementDistance < width*2 + myHero.boundingRadius then
+                                if self.Menu.Evade.EvadeCalc:Value() then
+                                    local DodgeRange = width*2 + myHero.boundingRadius
+                                    if DodgeRange < DodgeableRange then
+                                        local DodgeSpot = self:GetDodgeSpot(CastPos, ClosestSpot, DodgeRange)
+                                        if DodgeSpot ~= nil then
+                                           --PrintChat("Dodging to Calced Spot")
+                                            return DodgeSpot
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end    
+    return nil
+end
+
+function Kaisa:ClosestPointOnLineSegment(p, p1, p2)
+    local px = p.x
+    local pz = p.z
+    local ax = p1.x
+    local az = p1.z
+    local bx = p2.x
+    local bz = p2.z
+    local bxax = bx - ax
+    local bzaz = bz - az
+    local t = ((px - ax) * bxax + (pz - az) * bzaz) / (bxax * bxax + bzaz * bzaz)
+    if (t < 0) then
+        return p1, false
+    end
+    if (t > 1) then
+        return p2, false
+    end
+    return {x = ax + t * bxax, z = az + t * bzaz}, true
+end
+
+function Kaisa:GetDodgeSpot(CastSpot, ClosestSpot, width)
+    local DodgeSpot = nil
+    local RadAngle1 = 90 * math.pi / 180
+    local CheckPos1 = ClosestSpot + (CastSpot - ClosestSpot):Rotated(0, RadAngle1, 0):Normalized() * width
+    local RadAngle2 = 270 * math.pi / 180
+    local CheckPos2 = ClosestSpot + (CastSpot - ClosestSpot):Rotated(0, RadAngle2, 0):Normalized() * width
+
+    if GetDistance(CheckPos1, mousePos) < GetDistance(CheckPos2, mousePos) then
+        if GetDistance(CheckPos1, myHero.pos) < DodgeableRange then
+            DodgeSpot = CheckPos1
+        elseif GetDistance(CheckPos2, myHero.pos) < DodgeableRange then
+            DodgeSpot = CheckPos2
+        end
+    else
+        if GetDistance(CheckPos2, myHero.pos) < DodgeableRange then
+            DodgeSpot = CheckPos2
+        elseif GetDistance(CheckPos1, myHero.pos) < DodgeableRange then
+            DodgeSpot = CheckPos1
+        end
+    end
+    return DodgeSpot
+end
+
+function Kaisa:RangedHelper(unit)
+    local EAARangel = _G.SDK.Data:GetAutoAttackRange(unit)
+    local MoveSpot = nil
+    local RangeDif = AARange - EAARangel
+    local ExtraRangeDist = RangeDif + -50
+    local ExtraRangeChaseDist = RangeDif + -150
+
+    local ScanDirection = Vector((myHero.pos-mousePos):Normalized())
+    local ScanDistance = GetDistance(myHero.pos, unit.pos) * 0.8
+    local ScanSpot = myHero.pos - ScanDirection * ScanDistance
 	
+
+    local MouseDirection = Vector((unit.pos-ScanSpot):Normalized())
+    local MouseSpotDistance = EAARangel + ExtraRangeDist
+    if not IsFacing(unit) then
+        MouseSpotDistance = EAARangel + ExtraRangeChaseDist
+    end
+    if MouseSpotDistance > AARange then
+        MouseSpotDistance = AARange
+    end
+
+    local MouseSpot = unit.pos - MouseDirection * (MouseSpotDistance)
+	local MouseDistance = GetDistance(unit.pos, mousePos)
+    local GaleMouseSpotDirection = Vector((myHero.pos-MouseSpot):Normalized())
+    local GalemouseSpotDistance = GetDistance(myHero.pos, MouseSpot)
+    if GalemouseSpotDistance > 300 then
+        GalemouseSpotDistance = 300
+    end
+    local GaleMouseSpoty = myHero.pos - GaleMouseSpotDirection * GalemouseSpotDistance
+    MoveSpot = MouseSpot
+
+    if MoveSpot then
+        if GetDistance(myHero.pos, MoveSpot) < 50 or IsUnderEnemyTurret(MoveSpot) then
+            _G.SDK.Orbwalker.ForceMovement = nil
+        elseif self.Menu.RangedHelperWalk:Value() and GetDistance(myHero.pos, unit.pos) <= AARange-50 and (Mode() == "Combo" or Mode() == "Harass") and self:CastingChecks() and MouseDistance < 750 then
+            _G.SDK.Orbwalker.ForceMovement = MoveSpot
+        else
+            _G.SDK.Orbwalker.ForceMovement = nil
+        end
+    end
+    return GaleMouseSpoty
+end
+
 function Kaisa:OnPostAttack(args)
 end
 
@@ -705,4 +944,3 @@ end
 function OnLoad()
     Manager()
 end
-
