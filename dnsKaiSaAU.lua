@@ -11,7 +11,7 @@ local AllySpawnPos = nil
 -- [ AutoUpdate ] --
 do
     
-    local Version = 1.4
+    local Version = 1.5
     
     local Files = {
         Lua = {
@@ -603,7 +603,7 @@ function Kaisa:Auto()
 		end
 		local Bedrohungsreichweite = 250 + myHero.boundingRadius + enemy.boundingRadius
 		if enemy and not enemy.dead and ValidTarget(enemy, Bedrohungsreichweite) and self:CanUse(_E, "ChargePeel") and self:CastingChecksE() and not _G.SDK.Attack:IsActive() then
-			if GetDistance(enemy.pos) <= Bedrohungsreichweite and (enemy.ms * 1.0 > myHero.ms or enemy.pathing.isDashing) and IsFacing(enemy)then
+			if GetDistance(enemy.pos) <= Bedrohungsreichweite and (enemy.ms * 0.8 > myHero.ms or enemy.pathing.isDashing) and IsFacing(enemy)then
 				Control.CastSpell(HK_E)
 			end
 		end
@@ -650,9 +650,9 @@ function Kaisa:Auto()
                 if  BestGaleDodgeSpot ~= nil then
 					if GetItemSlot(myHero, 6671) > 0 and self.Menu.Evade.EvadeGaFo:Value() and myHero:GetSpellData(GetItemSlot(myHero, 6671)).currentCd == 0 then
 							Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 6671)], BestGaleDodgeSpot)
-                    elseif myHero:GetSpellData(SUMMONER_1).name == "SummonerFlash" and IsReady(SUMMONER_1) and self.Menu.Evade.EvadeFla:Value() then
+                    elseif myHero:GetSpellData(SUMMONER_1).name == "SummonerFlash" and IsReady(SUMMONER_1) and self.Menu.Evade.EvadeFla:Value() and myHero.health/myHero.maxHealth <= 0.4 then
 						Control.CastSpell(HK_SUMMONER_1, BestGaleDodgeSpot)
-					elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerFlash" and IsReady(SUMMONER_2) and self.Menu.Evade.EvadeFla:Value() then
+					elseif myHero:GetSpellData(SUMMONER_2).name == "SummonerFlash" and IsReady(SUMMONER_2) and self.Menu.Evade.EvadeFla:Value() and myHero.health/myHero.maxHealth <= 0.4 then
 						Control.CastSpell(HK_SUMMONER_2, BestGaleDodgeSpot)
 					end	
 				end
