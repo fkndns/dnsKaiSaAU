@@ -11,7 +11,7 @@ local AllySpawnPos = nil
 -- [ AutoUpdate ] --
 do
     
-    local Version = 1.3
+    local Version = 1.4
     
     local Files = {
         Lua = {
@@ -630,11 +630,11 @@ function Kaisa:Auto()
 		
 		else
 			if self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 3140) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 3140)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
-				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3140)] end, 0.04)
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3140)] end, 0.04))
 			elseif self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 3139) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 3139)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
-				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3139)] end, 0.04)
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 3139)] end, 0.04))
 			elseif self.Menu.Misc.QSS:Value() and GetItemSlot(myHero, 6035) > 0 and myHero:GetSpellData(GetItemSlot(myHero, 6035)).currentCd == 0 and IsImmobile(myHero) > 0.5 and enemy.activeSpell.target == myHero.handle then
-				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 6035)] end, 0.04)
+				DelayAction(function() Control.CastSpell(ItemHotKey[GetItemSlot(myHero, 6035)] end, 0.04))
 			end
 		end
         local EEAARange = _G.SDK.Data:GetAutoAttackRange(enemy)
@@ -944,3 +944,4 @@ end
 function OnLoad()
     Manager()
 end
+
